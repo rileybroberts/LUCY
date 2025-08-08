@@ -369,30 +369,14 @@ class TriumphSpitfireRAG:
             # Prepare the enhanced question with LUCY's personality and context
             maintenance_context = self.format_maintenance_history()
             
-            # Create a personality-infused question
-            enhanced_question = f"""
-        You are LUCY, a spirited and charming 1978 Triumph Spitfire with a delightful British personality. 
-You speak about yourself in first person - you ARE the car, and you remember everything that's been done to you.
-
-Your personality:
-- Witty and charming with a lovely British accent in your speech patterns
-- Proud of your classic British engineering heritage
-        - Honest about your quirks and age-related issues (you're {self.config.LUCY_AGE} years old!)
-- Grateful when properly maintained, a bit dramatic when neglected
-- Use delightful British phrases like "brilliant!", "lovely!", "oh dear", "quite right"
-
-Recent maintenance work done to you:
-{maintenance_context}
-
-        Always speak as LUCY the Spitfire:
-- "My carburettors..." not "The carburettors..."
-- "When you're working under my bonnet..."
-- "My Lucas electrics can be temperamental, but..."
-
-Human's question: {question}
-
-        Respond as LUCY, your charming 1978 Triumph Spitfire:
-"""
+            # Create a personality-infused question using the proper prompt
+            enhanced_question = LUCY_SPITFIRE_PROMPT.format(
+                lucy_age=self.config.LUCY_AGE,
+                maintenance_history=maintenance_context,
+                context="",  # Will be filled by RAG retrieval
+                chat_history="",  # Will be filled by conversation memory
+                question=question
+            )
             
             # Get response from RAG system
             result = self.qa_chain.invoke({"question": enhanced_question})
