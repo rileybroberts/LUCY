@@ -1,0 +1,18 @@
+{
+  "recent_work": [
+    {
+      "date": "2025-01-15",
+      "action": "Initial setup and configuration",
+              "notes": "LUCY is ready for her first conversation!"
+    }
+  ],
+  "current_issues": [
+    "Ready for a chat about my maintenance needs",
+    "Could use some documentation in the docs folder"
+  ],
+  "last_service_date": null,
+  "mileage": 89000,
+  "oil_type": "20W-50",
+  "last_oil_change": null,
+          "notes": "LUCY is excited to start chatting about classic car maintenance!"
+}
