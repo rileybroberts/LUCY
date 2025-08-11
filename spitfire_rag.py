@@ -213,6 +213,33 @@ class TriumphSpitfireRAG:
                                ["service", "tune-up", "major", "inspection"]):
                             self.maintenance_log["last_service_date"] = maintenance_entry["date"]
                         
+                        # Check for mileage/odometer updates in the notes or action
+                        full_text = f"{maintenance_data['action']} {maintenance_data.get('notes', '')}".lower()
+                        import re
+                        # Look for patterns like "68,092", "68092", "odometer: 68,092", "mileage 68092"
+                        mileage_patterns = [
+                            r'odometer[:\s]+([0-9,]+)',
+                            r'mileage[:\s]+([0-9,]+)', 
+                            r'miles[:\s]+([0-9,]+)',
+                            r'read[:\s]+([0-9,]+)',
+                            r'\b([0-9]{2,3}[,]?[0-9]{3})\b'  # Match 5-6 digit numbers with optional comma
+                        ]
+                        
+                        for pattern in mileage_patterns:
+                            match = re.search(pattern, full_text)
+                            if match:
+                                try:
+                                    # Extract and clean the mileage number
+                                    mileage_str = match.group(1).replace(',', '')
+                                    new_mileage = int(mileage_str)
+                                    # Only update if it's a reasonable mileage (20,000 - 200,000)
+                                    if 20000 <= new_mileage <= 200000:
+                                        self.maintenance_log["mileage"] = new_mileage
+                                        print(f"Updated mileage to: {new_mileage:,}")
+                                        break
+                                except (ValueError, IndexError):
+                                    continue
+                        
                         self.save_maintenance_log()
                         return True
                         

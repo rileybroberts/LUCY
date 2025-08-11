@@ -6,9 +6,24 @@
       "information": "20 lb ft for thermostat housing/water elbow to water pump bolts",
       "source": "handbook page 63",
       "category": "specifications"
+    },
+    {
+      "date": "2025-08-10 21:07",
+      "topic": "fuse location",
+      "information": "3 fuses located under bonnet on bulkhead, driver's side",
+      "source": "user discovery",
+      "category": "specifications"
     }
   ],
-  "part_numbers": [],
+  "part_numbers": [
+    {
+      "date": "2025-08-10 21:12",
+      "topic": "ignition system",
+      "information": "Pertronix 11149 european delco ignitor electronic ignition installed",
+      "source": "user discovery",
+      "category": "part_numbers"
+    }
+  ],
   "procedures": [],
   "corrections": []
 }

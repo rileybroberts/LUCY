@@ -9,14 +9,24 @@
       "date": "today",
       "action": "looking for thermostat parts",
       "notes": "planning/research phase, no work done yet"
+    },
+    {
+      "date": "prior to current ownership",
+      "action": "Pertronix 11149 european delco ignitor electronic ignition installed",
+      "notes": "installed by previous owner"
+    },
+    {
+      "date": "July 28th 2025",
+      "action": "Multiple repairs: brake wheel cylinders, brake bleeding, radiator hose, coolant service, valve cover gasket, tie rod ends, alignment",
+      "notes": "Work done by mechanic. Odometer: 68,092. Repairs included: replaced leaking brake wheel cylinders, brake bleeding, new lower radiator hose, coolant top-off and pressure test, new valve cover gasket, oil cleaning, 2 new front tie rod ends, front end alignment"
     }
   ],
   "current_issues": [
     "Ready for a chat about my maintenance needs",
     "Could use some documentation in the docs folder"
   ],
-  "last_service_date": null,
-  "mileage": 89000,
+  "last_service_date": "July 28th 2025",
+  "mileage": 68092,
   "oil_type": "20W-50",
   "last_oil_change": null,
   "notes": "LUCY is excited to start chatting about classic car maintenance!"
