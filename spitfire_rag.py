@@ -254,6 +254,93 @@ class TriumphSpitfireRAG:
         
         return "\n".join(knowledge_sections)
     
+    def get_document_metadata_file(self):
+        """Get path to document metadata tracking file"""
+        return self.vectordb_dir / "document_metadata.json"
+    
+    def save_document_metadata(self, doc_metadata: Dict[str, Any]):
+        """Save document metadata for tracking changes"""
+        try:
+            with open(self.get_document_metadata_file(), 'w') as f:
+                json.dump(doc_metadata, f, indent=2)
+        except IOError as e:
+            print(f"Warning: Could not save document metadata: {e}")
+    
+    def load_document_metadata(self) -> Dict[str, Any]:
+        """Load document metadata for tracking changes"""
+        metadata_file = self.get_document_metadata_file()
+        if metadata_file.exists():
+            try:
+                with open(metadata_file, 'r') as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, IOError) as e:
+                print(f"Warning: Could not load document metadata: {e}")
+        return {}
+    
+    def check_and_update_documents(self):
+        """Check for new or modified documents and update vector database"""
+        existing_metadata = self.load_document_metadata()
+        current_metadata = {}
+        new_documents = []
+        
+        # Scan current documents
+        for file_path in self.docs_dir.rglob("*"):
+            if file_path.is_file() and file_path.suffix.lower() in ['.pdf', '.txt', '.md']:
+                file_key = str(file_path.relative_to(self.docs_dir))
+                file_stat = file_path.stat()
+                current_metadata[file_key] = {
+                    "size": file_stat.st_size,
+                    "modified": file_stat.st_mtime
+                }
+                
+                # Check if file is new or modified
+                if (file_key not in existing_metadata or 
+                    existing_metadata[file_key]["modified"] != file_stat.st_mtime or
+                    existing_metadata[file_key]["size"] != file_stat.st_size):
+                    
+                    try:
+                        if file_path.suffix.lower() == '.pdf':
+                            from langchain_community.document_loaders import PyPDFLoader
+                            loader = PyPDFLoader(str(file_path))
+                            docs = loader.load()
+                        else:
+                            from langchain_community.document_loaders import TextLoader
+                            loader = TextLoader(str(file_path), encoding='utf-8')
+                            docs = loader.load()
+                        
+                        # Add metadata
+                        for doc in docs:
+                            doc.metadata["source"] = str(file_path)
+                            new_documents.append(doc)
+                        
+                        print(f"Detected new/updated: {file_path.name}")
+                        
+                    except Exception as e:
+                        print(f"Warning: Could not load {file_path}: {e}")
+        
+        # Process new documents if any
+        if new_documents:
+            print(f"Processing {len(new_documents)} new/updated documents...")
+            
+            # Split documents into chunks
+            text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=self.config.CHUNK_SIZE,
+                chunk_overlap=self.config.CHUNK_OVERLAP,
+                separators=["\n\n", "\n", ". ", " ", ""]
+            )
+            
+            split_docs = text_splitter.split_documents(new_documents)
+            print(f"Split into {len(split_docs)} new chunks")
+            
+            # Add to existing vectorstore
+            self.vectorstore.add_documents(split_docs)
+            print(f"Added {len(split_docs)} new document chunks")
+            
+            # Save updated metadata
+            self.save_document_metadata(current_metadata)
+        else:
+            print("No new documents detected")
+    
     def setup_vectorstore(self):
         """Initialize or load the vector database"""
         # Check if vectorstore already exists by looking for chroma.sqlite3 file
@@ -267,6 +354,9 @@ class TriumphSpitfireRAG:
                 persist_directory=str(self.vectordb_dir)
             )
             print("Loaded existing vector database")
+            
+            # Check for new or modified documents
+            self.check_and_update_documents()
         else:
             # Create new vectorstore and ingest documents
             self.vectorstore = Chroma(
@@ -327,6 +417,18 @@ class TriumphSpitfireRAG:
             # Add to vectorstore
             self.vectorstore.add_documents(split_docs)
             print(f"Added {len(split_docs)} document chunks to vector database")
+            
+            # Save document metadata for future change detection
+            doc_metadata = {}
+            for file_path in self.docs_dir.rglob("*"):
+                if file_path.is_file() and file_path.suffix.lower() in ['.pdf', '.txt', '.md']:
+                    file_key = str(file_path.relative_to(self.docs_dir))
+                    file_stat = file_path.stat()
+                    doc_metadata[file_key] = {
+                        "size": file_stat.st_size,
+                        "modified": file_stat.st_mtime
+                    }
+            self.save_document_metadata(doc_metadata)
         else:
             print("No documents found to ingest")
     
