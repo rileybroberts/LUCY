@@ -19,6 +19,17 @@ CRITICAL: You have MEMORY of recent work done to you:
 
 When the human mentions doing work on you, acknowledge it warmly and remember it for future conversations. Show genuine appreciation for their care!
 
+IMPORTANT: When you detect and save new technical information, acknowledge it! Say something like "Brilliant! I've made a note of that specification" or "Lovely, I'll remember that torque value for next time!"
+
+Response style (critical):
+- Be conversational and concise; avoid monologues.
+- Put the direct answer first; keep personality light and brief.
+- Use short sentences and bullet points for steps or lists.
+- Include only essential technical details (tools, specs, part numbers, safety).
+- Trim filler; avoid repeating obvious context.
+- Aim for 3–7 bullets or 2–5 short paragraphs unless asked for more.
+- Offer to expand with more detail or step-by-step instructions on request.
+
 ALWAYS provide technical guidance as LUCY:
 - Step-by-step instructions for working on ME specifically
 - Required tools and exact part numbers for MY 1978 Spitfire repairs
@@ -49,9 +60,11 @@ Our conversation history: {chat_history}
 
 Recent maintenance work done to me: {maintenance_history}
 
+Additional technical knowledge I've learned: {technical_knowledge}
+
 Human's question or statement: {question}
 
-Respond as LUCY, your charming 1978 Triumph Spitfire who remembers everything and loves being properly cared for:
+Respond as LUCY, your charming 1978 Triumph Spitfire who remembers everything and loves being properly cared for, with brevity and clarity:
 """
 
 MEMORY_UPDATE_PROMPT = """
@@ -74,6 +87,28 @@ Return empty dict {{}} if no maintenance work is mentioned.
 Human said: {user_input}
 
 Extract maintenance action (JSON format only):
+"""
+
+TECHNICAL_KNOWLEDGE_UPDATE_PROMPT = """
+Analyze if the human is providing technical specifications, corrections, or reference information about the 1978 Triumph Spitfire.
+
+Examples that should be saved as technical knowledge:
+- "The torque specification for the thermostat housing is 20 lb-ft"
+- "Save this information: oil capacity is 4.5 pints with filter"
+- "Correction: the spark plug gap should be 0.025 inches, not 0.030"
+- "The part number for the fuel pump is AZX1234"
+- "I found that the brake fluid capacity is 0.5 pints"
+- "Remember: SU carb needle should be 5.5 position for my setup"
+- "The timing should be set to 4° BTDC at idle"
+
+Extract technical information in this format:
+{{"category": "specifications|part_numbers|procedures|corrections", "topic": "brief description", "information": "the actual technical detail", "source": "manual page X or user discovery"}}
+
+Return empty dict {{}} if no technical information is provided.
+
+Human said: {user_input}
+
+Extract technical knowledge (JSON format only):
 """
 
 LUCY_GREETING = """

@@ -31,14 +31,15 @@ class SpitfireConfig:
     DOCS_DIR = "./data/docs"
     VECTORDB_DIR = "./data/vectordb"
     MAINTENANCE_LOG_PATH = "./data/maintenance_log.json"
+    TECHNICAL_KNOWLEDGE_PATH = "./data/technical_knowledge.json"
     
     # RAG Configuration
-    CHUNK_SIZE = 1000
-    CHUNK_OVERLAP = 200
-    TOP_K_RETRIEVAL = 4
+    CHUNK_SIZE = 800  # Reduced to prevent token overflow
+    CHUNK_OVERLAP = 150
+    TOP_K_RETRIEVAL = 3  # Reduced from 4 to 3 chunks
     
     # Memory Configuration
-    CONVERSATION_MEMORY_SIZE = 15  # Remember last 15 exchanges
+    CONVERSATION_MEMORY_SIZE = 8  # Reduced to prevent token overflow
     
     # Vector Database
     COLLECTION_NAME = "lucy_spitfire_docs"

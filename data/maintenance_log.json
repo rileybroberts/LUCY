@@ -3,7 +3,12 @@
     {
       "date": "2025-01-15",
       "action": "Initial setup and configuration",
-              "notes": "LUCY is ready for her first conversation!"
+      "notes": "LUCY is ready for her first conversation!"
+    },
+    {
+      "date": "today",
+      "action": "looking for thermostat parts",
+      "notes": "planning/research phase, no work done yet"
     }
   ],
   "current_issues": [
@@ -14,5 +19,5 @@
   "mileage": 89000,
   "oil_type": "20W-50",
   "last_oil_change": null,
-          "notes": "LUCY is excited to start chatting about classic car maintenance!"
+  "notes": "LUCY is excited to start chatting about classic car maintenance!"
 }

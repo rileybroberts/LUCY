@@ -22,6 +22,7 @@ from config import SpitfireConfig
 from prompts import (
     LUCY_SPITFIRE_PROMPT, 
     MEMORY_UPDATE_PROMPT, 
+    TECHNICAL_KNOWLEDGE_UPDATE_PROMPT,
     LUCY_GREETING,
     LUCY_SYSTEM_INFO
 )
@@ -43,6 +44,7 @@ class TriumphSpitfireRAG:
         self.docs_dir = Path(docs_dir or self.config.DOCS_DIR)
         self.vectordb_dir = Path(vectordb_dir or self.config.VECTORDB_DIR)
         self.maintenance_log_path = Path(self.config.MAINTENANCE_LOG_PATH)
+        self.technical_knowledge_path = Path(self.config.TECHNICAL_KNOWLEDGE_PATH)
         
         # Ensure directories exist
         self.docs_dir.mkdir(parents=True, exist_ok=True)
@@ -73,6 +75,7 @@ class TriumphSpitfireRAG:
         self.vectorstore = None
         self.qa_chain = None
         self.maintenance_log = self.load_maintenance_log()
+        self.technical_knowledge = self.load_technical_knowledge()
         
         # Setup RAG system
         self.setup_vectorstore()
@@ -105,6 +108,76 @@ class TriumphSpitfireRAG:
                 json.dump(self.maintenance_log, f, indent=2, default=str)
         except IOError as e:
             print(f"Warning: Could not save maintenance log: {e}")
+    
+    def load_technical_knowledge(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Load LUCY's technical knowledge from persistent storage"""
+        if self.technical_knowledge_path.exists():
+            try:
+                with open(self.technical_knowledge_path, 'r') as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, IOError) as e:
+                print(f"Warning: Could not load technical knowledge: {e}")
+        
+        # Return default technical knowledge structure
+        return {
+            "specifications": [],
+            "part_numbers": [],
+            "procedures": [],
+            "corrections": []
+        }
+    
+    def save_technical_knowledge(self):
+        """Persist LUCY's technical knowledge"""
+        try:
+            with open(self.technical_knowledge_path, 'w') as f:
+                json.dump(self.technical_knowledge, f, indent=2, default=str)
+        except IOError as e:
+            print(f"Warning: Could not save technical knowledge: {e}")
+    
+    def update_technical_knowledge(self, user_input: str) -> bool:
+        """
+        Detect and update technical knowledge from user input
+        Returns True if technical knowledge was detected and saved
+        """
+        try:
+            # Use LLM to extract technical information
+            knowledge_prompt = TECHNICAL_KNOWLEDGE_UPDATE_PROMPT.format(user_input=user_input)
+            response = self.llm.invoke(knowledge_prompt)
+            
+            # Parse the response
+            response_text = response.content.strip()
+            if response_text and response_text != "{}":
+                try:
+                    knowledge_data = json.loads(response_text)
+                    if knowledge_data and "category" in knowledge_data and "information" in knowledge_data:
+                        # Add timestamp and format entry
+                        knowledge_entry = {
+                            "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            "topic": knowledge_data.get("topic", "Technical information"),
+                            "information": knowledge_data["information"],
+                            "source": knowledge_data.get("source", "User provided"),
+                            "category": knowledge_data["category"]
+                        }
+                        
+                        # Add to appropriate category
+                        category = knowledge_data["category"]
+                        if category in self.technical_knowledge:
+                            self.technical_knowledge[category].append(knowledge_entry)
+                            
+                            # Keep only last 20 entries per category to prevent bloat
+                            if len(self.technical_knowledge[category]) > 20:
+                                self.technical_knowledge[category] = self.technical_knowledge[category][-20:]
+                            
+                            self.save_technical_knowledge()
+                            return True
+                        
+                except json.JSONDecodeError:
+                    pass  # Not valid JSON, no technical knowledge detected
+                    
+        except Exception as e:
+            print(f"Warning: Error processing technical knowledge: {e}")
+        
+        return False
     
     def update_maintenance_memory(self, user_input: str) -> bool:
         """
@@ -165,12 +238,28 @@ class TriumphSpitfireRAG:
         
         return "\n".join(history)
     
+    def format_technical_knowledge(self) -> str:
+        """Format technical knowledge for prompt injection"""
+        if not any(self.technical_knowledge.values()):
+            return "No additional technical knowledge recorded yet."
+        
+        knowledge_sections = []
+        
+        for category, entries in self.technical_knowledge.items():
+            if entries:
+                section_name = category.replace("_", " ").title()
+                knowledge_sections.append(f"\n{section_name}:")
+                for entry in entries[-5:]:  # Last 5 entries per category
+                    knowledge_sections.append(f"- {entry['topic']}: {entry['information']} (Source: {entry['source']})")
+        
+        return "\n".join(knowledge_sections)
+    
     def setup_vectorstore(self):
         """Initialize or load the vector database"""
-        # Check if vectorstore already exists
-        vectorstore_path = self.vectordb_dir / self.config.COLLECTION_NAME
+        # Check if vectorstore already exists by looking for chroma.sqlite3 file
+        chroma_db_file = self.vectordb_dir / "chroma.sqlite3"
         
-        if vectorstore_path.exists() and any(vectorstore_path.iterdir()):
+        if chroma_db_file.exists() and chroma_db_file.stat().st_size > 0:
             # Load existing vectorstore
             self.vectorstore = Chroma(
                 collection_name=self.config.COLLECTION_NAME,
@@ -199,9 +288,7 @@ class TriumphSpitfireRAG:
         )
         documents.append(system_doc)
         
-        # Add sample Spitfire knowledge
-        sample_docs = self.add_sample_data()
-        documents.extend(sample_docs)
+        # Sample data removed - using real manuals and forum posts instead
         
         # Load documents from docs directory
         for file_path in self.docs_dir.rglob("*"):
@@ -243,103 +330,7 @@ class TriumphSpitfireRAG:
         else:
             print("No documents found to ingest")
     
-    def add_sample_data(self) -> List[Document]:
-        """Add sample Triumph Spitfire knowledge"""
-        sample_docs = [
-            Document(
-                page_content="""
-                Triumph Spitfire Carburettor Adjustment - SU HS4 Twin Carbs
-                
-                The 1978 Spitfire uses twin SU HS4 carburettors that require periodic synchronization.
-                
-                Tools Required:
-                - Carb balancer or Unisyn tool
-                - 3/8" spanner for throttle adjustment
-                - Small screwdriver for mixture adjustment
-                - Tachometer
-                
-                Procedure:
-                1. Warm engine to operating temperature
-                2. Remove air cleaners
-                3. Check throttle linkage for smooth operation
-                4. Adjust idle speed to 800-900 RPM using throttle stop screws
-                5. Use carb balancer to synchronize both carbs at idle
-                6. Adjust mixture screws for smoothest idle (usually 1.5-2 turns out)
-                7. Test at 2000 RPM - both carbs should read identical on balancer
-                8. Road test and readjust if necessary
-                
-                Common Issues:
-                - Uneven idle usually indicates poor synchronization
-                - Black smoke = too rich mixture
-                - Popping back through carbs = too lean mixture
-                """,
-                metadata={"source": "carburettor_guide", "type": "maintenance"}
-            ),
-            Document(
-                page_content="""
-                Triumph Spitfire Oil Change - 1.5L Engine
-                
-                Oil Capacity: 4.5 pints (2.6 litres) with filter change
-                Recommended Oil: 20W-50 for vintage engines in normal climates
-                Filter: Spin-on type, Fram PH30 or equivalent
-                
-                Procedure:
-                1. Warm engine to operating temperature
-                2. Position drain pan under sump drain plug
-                3. Remove drain plug (19mm socket) - beware hot oil!
-                4. Allow to drain for 15-20 minutes
-                5. Remove oil filter (may need filter wrench)
-                6. Clean filter mounting surface
-                7. Apply thin coat of oil to new filter gasket
-                8. Install new filter hand-tight plus 3/4 turn
-                9. Replace drain plug with new washer if needed
-                10. Fill with oil through rocker cover opening
-                11. Run engine and check for leaks
-                12. Check level after 5 minutes running
-                
-                Notes:
-                - Check oil level weekly - these engines can develop leaks
-                - Change oil every 3000 miles for classic car use
-                - Use quality 20W-50 oil designed for older engines
-                """,
-                metadata={"source": "oil_change_guide", "type": "maintenance"}
-            ),
-            Document(
-                page_content="""
-                Triumph Spitfire Electrical System - Lucas "Prince of Darkness"
-                
-                The 1978 Spitfire uses Lucas electrical components, famous for their quirks.
-                
-                Common Electrical Issues:
-                - Intermittent wipers (check earth connections)
-                - Dim headlights (clean all earth points)
-                - Starting problems (check starter solenoid)
-                - Charging issues (test alternator output)
-                
-                Essential Electrical Maintenance:
-                1. Clean all earth/ground connections annually
-                2. Check battery terminals for corrosion
-                3. Test alternator output (should be 13.8-14.4V at 2000 RPM)
-                4. Inspect wiring for chafing or damage
-                5. Keep spare fuses and bulbs in car
-                
-                Lucas Electrical Tips:
-                - Never disconnect battery while engine running
-                - Use contact cleaner on switch contacts
-                - Upgrade to electronic ignition if still using points
-                - Consider LED bulb upgrades for reliability
-                - Always carry a multimeter and basic electrical tools
-                
-                Common Part Numbers:
-                - Headlight bulbs: Lucas LLB472 (45/40W)
-                - Fuses: Lucas 35A slow blow for main circuits
-                - Alternator belt: Gates 6PK1016 or equivalent
-                """,
-                metadata={"source": "electrical_guide", "type": "maintenance"}
-            )
-        ]
-        
-        return sample_docs
+
     
     def setup_qa_chain(self):
         """Setup the conversational retrieval chain with LUCY's personality"""
@@ -362,20 +353,30 @@ class TriumphSpitfireRAG:
         """
         Main method to ask LUCY a question with memory integration
         """
-        # Check for maintenance updates
+        # Check for maintenance updates and technical knowledge
         maintenance_detected = self.update_maintenance_memory(question)
+        technical_knowledge_detected = self.update_technical_knowledge(question)
         
         try:
             # Prepare the enhanced question with LUCY's personality and context
             maintenance_context = self.format_maintenance_history()
+            technical_context = self.format_technical_knowledge()
+            
+            # Add detection status to the question if knowledge was detected
+            detection_note = ""
+            if technical_knowledge_detected:
+                detection_note = "\n[SYSTEM: Technical knowledge was just detected and saved from this input - acknowledge this!]"
+            if maintenance_detected:
+                detection_note += "\n[SYSTEM: Maintenance work was just detected and saved from this input - acknowledge this!]"
             
             # Create a personality-infused question using the proper prompt
             enhanced_question = LUCY_SPITFIRE_PROMPT.format(
                 lucy_age=self.config.LUCY_AGE,
                 maintenance_history=maintenance_context,
+                technical_knowledge=technical_context,
                 context="",  # Will be filled by RAG retrieval
                 chat_history="",  # Will be filled by conversation memory
-                question=question
+                question=question + detection_note
             )
             
             # Get response from RAG system
@@ -384,7 +385,8 @@ class TriumphSpitfireRAG:
             response = {
                 "answer": result["answer"],
                 "source_documents": result.get("source_documents", []),
-                "maintenance_detected": maintenance_detected
+                "maintenance_detected": maintenance_detected,
+                "technical_knowledge_detected": technical_knowledge_detected
             }
             
             return response
@@ -393,7 +395,8 @@ class TriumphSpitfireRAG:
             return {
                 "answer": f"Oh dear! I seem to be having a bit of trouble with my electrical system (error: {str(e)}). Could you try asking me again?",
                 "source_documents": [],
-                "maintenance_detected": maintenance_detected
+                "maintenance_detected": maintenance_detected,
+                "technical_knowledge_detected": technical_knowledge_detected
             }
     
     def get_greeting(self) -> str:
@@ -420,4 +423,19 @@ class TriumphSpitfireRAG:
             "current_mileage": self.maintenance_log.get("mileage"),
             "current_issues": self.maintenance_log.get("current_issues", []),
             "recent_work": self.maintenance_log["recent_work"][-3:] if self.maintenance_log["recent_work"] else []
+        }
+    
+    def get_technical_knowledge_summary(self) -> Dict[str, Any]:
+        """Get a summary of LUCY's learned technical knowledge"""
+        total_entries = sum(len(entries) for entries in self.technical_knowledge.values())
+        return {
+            "total_knowledge_entries": total_entries,
+            "specifications_count": len(self.technical_knowledge.get("specifications", [])),
+            "part_numbers_count": len(self.technical_knowledge.get("part_numbers", [])),
+            "procedures_count": len(self.technical_knowledge.get("procedures", [])),
+            "corrections_count": len(self.technical_knowledge.get("corrections", [])),
+            "recent_knowledge": {
+                category: entries[-2:] if entries else []
+                for category, entries in self.technical_knowledge.items()
+            }
         }
