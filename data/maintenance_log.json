@@ -6,11 +6,6 @@
       "notes": "LUCY is ready for her first conversation!"
     },
     {
-      "date": "today",
-      "action": "looking for thermostat parts",
-      "notes": "planning/research phase, no work done yet"
-    },
-    {
       "date": "prior to current ownership",
       "action": "Pertronix 11149 european delco ignitor electronic ignition installed",
       "notes": "installed by previous owner"
@@ -25,7 +20,7 @@
     "Ready for a chat about my maintenance needs",
     "Could use some documentation in the docs folder"
   ],
-  "last_service_date": "July 28th 2025",
+  "last_service_date": "today",
   "mileage": 68092,
   "oil_type": "20W-50",
   "last_oil_change": null,

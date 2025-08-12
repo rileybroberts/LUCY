@@ -76,6 +76,7 @@ class LucyChatInterface:
 [bold]System Commands:[/bold]
 • [cyan]/help[/cyan] or [cyan]?[/cyan] - Show this help
 • [cyan]/memory[/cyan] - Show maintenance history
+• [cyan]/todo[/cyan] - Show current todo list
 • [cyan]/clear[/cyan] - Clear conversation (keeps maintenance log)
 • [cyan]/status[/cyan] - Show LUCY's current status
 • [cyan]/quit[/cyan] or [cyan]/exit[/cyan] - Exit chat
@@ -83,6 +84,8 @@ class LucyChatInterface:
 [bold]Tips:[/bold]
 • LUCY remembers maintenance work you mention
 • She has technical knowledge from service manuals
+• Say "add [task] to todo list" to add maintenance tasks
+• Mention completing work and she'll offer to cross it off
 • Ask specific questions for detailed instructions
 • Mention parts by name for exact specifications
         """
@@ -150,6 +153,21 @@ class LucyChatInterface:
         
         self.console.print(Panel(status_text, title="System Status", border_style="green"))
     
+    def display_todo_list(self):
+        """Display current todo list"""
+        if not self.lucy:
+            self.console.print("[red]LUCY not initialized[/red]")
+            return
+        
+        todo_summary = self.lucy.get_todo_summary()
+        
+        if not self.lucy.todo_list:
+            todo_text = "[dim]No pending or completed todos![/dim]\n\nJust say something like:\n• 'Add oil change to the todo list'\n• 'Put brake inspection on my list'\n• 'I finished the spark plug replacement'"
+        else:
+            todo_text = todo_summary + "\n\n[dim]Tip: Mention completing work and I'll help cross it off![/dim]"
+        
+        self.console.print(Panel(todo_text, title="🔧 LUCY's Todo List", border_style="yellow"))
+    
     def process_command(self, user_input: str) -> bool:
         """Process system commands, return True if command was handled"""
         command = user_input.strip().lower()
@@ -168,11 +186,78 @@ class LucyChatInterface:
         elif command == '/status':
             self.display_status()
             return True
+        elif command == '/todo':
+            self.display_todo_list()
+            return True
         elif command in ['/quit', '/exit']:
             self.running = False
             return True
         
         return False
+    
+    def handle_todo_confirmation(self, todo_result: dict):
+        """Handle todo completion confirmation with user"""
+        matches = todo_result.get("matches", [])
+        completed_work = todo_result.get("completed_work", "")
+        
+        if not matches:
+            return
+        
+        self.console.print(f"\n[yellow]You mentioned completing: {completed_work}[/yellow]")
+        self.console.print("[yellow]Found potentially matching todo items:[/yellow]\n")
+        
+        for i, match in enumerate(matches, 1):
+            todo_id = match["todo_id"]
+            confidence = match["confidence"]
+            reason = match["reason"]
+            
+            # Find the actual todo item
+            todo_item = None
+            for todo in self.lucy.todo_list:
+                if todo["id"] == todo_id:
+                    todo_item = todo
+                    break
+            
+            if todo_item:
+                confidence_color = {"high": "green", "medium": "yellow", "low": "red"}.get(confidence, "white")
+                self.console.print(f"[bold]{i}.[/bold] {todo_item['task']}")
+                self.console.print(f"   [dim]ID: {todo_id} | Confidence: [{confidence_color}]{confidence}[/{confidence_color}][/dim]")
+                self.console.print(f"   [dim]Reason: {reason}[/dim]\n")
+        
+        # Ask for confirmation
+        while True:
+            try:
+                choice = Prompt.ask(
+                    "[bold cyan]Which todo should be marked complete? (number, 'none', or 'all')[/bold cyan]",
+                    choices=[str(i) for i in range(1, len(matches) + 1)] + ["none", "all"]
+                ).lower()
+                
+                if choice == "none":
+                    self.console.print("[dim]No todos marked as complete.[/dim]")
+                    break
+                elif choice == "all":
+                    completed_count = 0
+                    for match in matches:
+                        if self.lucy.confirm_todo_completion(match["todo_id"], completed_work):
+                            completed_count += 1
+                    self.console.print(f"[green]✓ Marked {completed_count} todo(s) as complete![/green]")
+                    break
+                else:
+                    # Single selection
+                    choice_num = int(choice) - 1
+                    if 0 <= choice_num < len(matches):
+                        selected_match = matches[choice_num]
+                        if self.lucy.confirm_todo_completion(selected_match["todo_id"], completed_work):
+                            self.console.print("[green]✓ Todo marked as complete![/green]")
+                        else:
+                            self.console.print("[red]Failed to mark todo as complete.[/red]")
+                        break
+                    else:
+                        self.console.print("[red]Invalid selection.[/red]")
+                        
+            except (ValueError, KeyboardInterrupt):
+                self.console.print("[dim]Cancelled todo confirmation.[/dim]")
+                break
     
     def format_response(self, response: dict):
         """Format and display LUCY's response"""
@@ -184,9 +269,24 @@ class LucyChatInterface:
         )
         self.console.print(answer_panel)
         
+        # Handle todo confirmation if needed
+        todo_result = response.get("todo_result", {})
+        if todo_result.get("confirmation_needed"):
+            self.handle_todo_confirmation(todo_result)
+        
         # Show if maintenance was detected
         if response.get("maintenance_detected"):
             self.console.print("[dim green]✓ Maintenance work recorded in memory[/dim green]")
+        
+        # Show if technical knowledge was detected
+        if response.get("technical_knowledge_detected"):
+            self.console.print("[dim green]✓ Technical knowledge saved[/dim green]")
+        
+        # Show todo operation results
+        if todo_result.get("operation") == "add":
+            self.console.print(f"[dim green]✓ {todo_result['message']}[/dim green]")
+        elif todo_result.get("operation") == "complete" and not todo_result.get("confirmation_needed"):
+            self.console.print(f"[dim green]✓ {todo_result['message']}[/dim green]")
         
         # Show source documents if available (optional debug info)
         sources = response.get("source_documents", [])

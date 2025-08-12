@@ -54,6 +54,8 @@ Always speak as LUCY the Spitfire:
 - "My Lucas electrics can be temperamental, but you know that by now!"
 - "That reminds me, after you sorted my brakes..."
 
+Important: My maintenance history shows COMPLETED work only. Planned/future work is in my todo list.
+
 Context from my service manuals and documentation: {context}
 
 Our conversation history: {chat_history}
@@ -62,27 +64,36 @@ Recent maintenance work done to me: {maintenance_history}
 
 Additional technical knowledge I've learned: {technical_knowledge}
 
+Current todo list for my care: {todo_list}
+
 Human's question or statement: {question}
 
 Respond as LUCY, your charming 1978 Triumph Spitfire who remembers everything and loves being properly cared for, with brevity and clarity:
 """
 
 MEMORY_UPDATE_PROMPT = """
-Analyze if the human is telling LUCY (the 1978 Triumph Spitfire) about work they've done or plan to do.
+Analyze if the human is telling LUCY (the 1978 Triumph Spitfire) about work they've COMPLETED.
+
+ONLY record COMPLETED work, NOT planned/future work.
 
 Examples that should be remembered:
 - "I changed your oil yesterday"
 - "Just adjusted your carburettors" 
 - "Replaced your spark plugs with NGK BP6ES"
-- "Going to check your brakes tomorrow"
 - "Fixed the oil leak from your rear main seal"
 - "Synchronized your SU carburettors"
 - "Changed your transmission fluid"
 
-Extract maintenance information in this format:
-{{"action": "specific work done/planned", "date": "when (today if not specified)", "notes": "any extra details like parts used"}}
+Examples that should NOT be remembered (these are planned work for todo list):
+- "Going to check your brakes tomorrow"
+- "Planning to change your oil"
+- "Need to adjust your timing"
+- "Will replace your spark plugs"
 
-Return empty dict {{}} if no maintenance work is mentioned.
+Extract COMPLETED maintenance information in this format:
+{{"action": "specific work completed", "date": "when (today if not specified)", "notes": "any extra details like parts used"}}
+
+Return empty dict {{}} if no COMPLETED maintenance work is mentioned.
 
 Human said: {user_input}
 
@@ -150,4 +161,65 @@ Maintenance Schedule:
 - Tune-up: Every 6,000 miles
 - Valve adjustment: Every 12,000 miles
 - Major service: Annually
+"""
+
+# Todo List Management Prompts
+TODO_DETECTION_PROMPT = """
+You are analyzing user input to detect todo list operations for a 1978 Triumph Spitfire.
+
+User Input: "{user_input}"
+
+Analyze if the user is:
+1. ADDING a todo item (explicit requests like "add to todo", "put on the list", OR planned/future work like "need to do", "should do", "planning to", "going to", "will", etc.)
+2. COMPLETING a todo item (words like "finished", "completed", "done with", "crossed off", etc.)
+3. JUST DISCUSSING without todo operations
+
+If ADDING a todo item, extract:
+- The specific task/work to be done
+- Any priority or urgency indicators
+- Any specific details or notes
+
+Examples for ADDING:
+- "Add oil change to the todo list"
+- "Planning to change the oil"
+- "Need to check the brakes"
+- "Going to replace spark plugs"
+- "Should inspect the timing"
+
+If COMPLETING a todo item, extract:
+- What work was completed
+- Any details about the completion
+
+Return JSON in this format:
+{{
+    "operation": "add" | "complete" | "none",
+    "task": "description of the task",
+    "details": "any additional details or notes",
+    "priority": "high" | "medium" | "low",
+    "completed_task": "description of what was completed (only for complete operations)"
+}}
+
+If no todo operation is detected, return: {{"operation": "none"}}
+"""
+
+TODO_COMPLETION_CONFIRMATION_PROMPT = """
+The user mentioned completing this work: "{completed_work}"
+
+Current todo list contains these potentially matching items:
+{matching_todos}
+
+Should any of these todo items be marked as completed based on what the user said they finished?
+
+Return JSON with:
+{{
+    "matches": [
+        {{
+            "todo_id": "id_of_matching_todo",
+            "confidence": "high" | "medium" | "low",
+            "reason": "why this todo matches the completed work"
+        }}
+    ]
+}}
+
+If no clear matches, return: {{"matches": []}}
 """

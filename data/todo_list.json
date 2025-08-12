@@ -1,0 +1,48 @@
+[
+  {
+    "id": "oil001",
+    "task": "Oil change and removing and cleaning the oil sump",
+    "details": "Complete oil change procedure. Use 20W-50 oil with high ZDDP content. Ensure proper torque on drain plug (20-25 lbf ft). Replace oil filter.",
+    "priority": "medium",
+    "date_added": "2025-01-02 10:30",
+    "status": "pending",
+    "date_completed": null
+  },
+  {
+    "id": "coolant01",
+    "task": "Coolant service - drain and refill",
+    "details": "Coolant currently low from overflow, planning to drain and refill once car is moved to garage",
+    "priority": "medium",
+    "date_added": "2025-01-02 10:32",
+    "status": "pending",
+    "date_completed": null
+  },
+  {
+    "id": "oil002",
+    "task": "Add engine oil",
+    "details": "Oil level reported as below minimum on dipstick - immediate top-up needed",
+    "priority": "high",
+    "date_added": "2025-01-02 10:33",
+    "status": "pending",
+    "date_completed": null
+  },
+  {
+    "id": "thermo01",
+    "task": "Research and source thermostat parts",
+    "details": "Looking for thermostat parts - research phase",
+    "priority": "low",
+    "date_added": "2025-01-02 10:34",
+    "status": "completed",
+    "date_completed": "2025-08-11 21:20",
+    "completion_notes": "researching the thermostat parts"
+  },
+  {
+    "id": "25b75bb7",
+    "task": "fix the bar that holds the trunk open",
+    "details": "trunk support bar repair/replacement needed",
+    "priority": "medium",
+    "date_added": "2025-08-11 21:21",
+    "status": "pending",
+    "date_completed": null
+  }
+]

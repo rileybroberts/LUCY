@@ -32,11 +32,12 @@ class SpitfireConfig:
     VECTORDB_DIR = "./data/vectordb"
     MAINTENANCE_LOG_PATH = "./data/maintenance_log.json"
     TECHNICAL_KNOWLEDGE_PATH = "./data/technical_knowledge.json"
+    TODO_LIST_PATH = "./data/todo_list.json"
     
     # RAG Configuration
     CHUNK_SIZE = 800  # Reduced to prevent token overflow
     CHUNK_OVERLAP = 150
-    TOP_K_RETRIEVAL = 3  # Reduced from 4 to 3 chunks
+    TOP_K_RETRIEVAL = 12
     
     # Memory Configuration
     CONVERSATION_MEMORY_SIZE = 8  # Reduced to prevent token overflow

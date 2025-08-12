@@ -23,6 +23,8 @@ from prompts import (
     LUCY_SPITFIRE_PROMPT, 
     MEMORY_UPDATE_PROMPT, 
     TECHNICAL_KNOWLEDGE_UPDATE_PROMPT,
+    TODO_DETECTION_PROMPT,
+    TODO_COMPLETION_CONFIRMATION_PROMPT,
     LUCY_GREETING,
     LUCY_SYSTEM_INFO
 )
@@ -45,6 +47,7 @@ class TriumphSpitfireRAG:
         self.vectordb_dir = Path(vectordb_dir or self.config.VECTORDB_DIR)
         self.maintenance_log_path = Path(self.config.MAINTENANCE_LOG_PATH)
         self.technical_knowledge_path = Path(self.config.TECHNICAL_KNOWLEDGE_PATH)
+        self.todo_list_path = Path(self.config.TODO_LIST_PATH)
         
         # Ensure directories exist
         self.docs_dir.mkdir(parents=True, exist_ok=True)
@@ -76,6 +79,10 @@ class TriumphSpitfireRAG:
         self.qa_chain = None
         self.maintenance_log = self.load_maintenance_log()
         self.technical_knowledge = self.load_technical_knowledge()
+        self.todo_list = self.load_todo_list()
+        
+        # Clean up any planned work that was incorrectly added to maintenance log
+        self.cleanup_maintenance_log()
         
         # Setup RAG system
         self.setup_vectorstore()
@@ -148,7 +155,11 @@ class TriumphSpitfireRAG:
             response_text = response.content.strip()
             if response_text and response_text != "{}":
                 try:
-                    knowledge_data = json.loads(response_text)
+                    json_text = self._extract_json_from_response(response_text)
+                    if json_text:
+                        knowledge_data = json.loads(json_text)
+                    else:
+                        knowledge_data = None
                     if knowledge_data and "category" in knowledge_data and "information" in knowledge_data:
                         # Add timestamp and format entry
                         knowledge_entry = {
@@ -179,6 +190,225 @@ class TriumphSpitfireRAG:
         
         return False
     
+    def load_todo_list(self) -> List[Dict[str, Any]]:
+        """Load LUCY's todo list from persistent storage"""
+        if self.todo_list_path.exists():
+            try:
+                with open(self.todo_list_path, 'r') as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, IOError) as e:
+                print(f"Warning: Could not load todo list: {e}")
+        
+        # Return default empty todo list
+        return []
+    
+    def save_todo_list(self):
+        """Persist LUCY's todo list"""
+        try:
+            with open(self.todo_list_path, 'w') as f:
+                json.dump(self.todo_list, f, indent=2, default=str)
+        except IOError as e:
+            print(f"Warning: Could not save todo list: {e}")
+    
+    def process_todo_operations(self, user_input: str) -> Dict[str, Any]:
+        """
+        Detect and process todo list operations from user input
+        Returns dict with operation details and any confirmations needed
+        """
+        try:
+            # Use LLM to detect todo operations
+            todo_prompt = TODO_DETECTION_PROMPT.format(user_input=user_input)
+            response = self.llm.invoke(todo_prompt)
+            
+            # Parse the response - extract JSON from potentially multi-line response
+            response_text = response.content.strip()
+            if response_text and response_text != "{}":
+                try:
+                    # Extract JSON from the response (may have explanation text after)
+                    json_text = self._extract_json_from_response(response_text)
+                    if json_text:
+                        todo_data = json.loads(json_text)
+                        operation = todo_data.get("operation", "none")
+                        
+                        if operation == "add":
+                            return self._add_todo_item(todo_data)
+                        elif operation == "complete":
+                            return self._handle_todo_completion(todo_data)
+                    
+                except json.JSONDecodeError:
+                    pass  # Not valid JSON, no todo operation detected
+                    
+        except Exception as e:
+            print(f"Warning: Error processing todo operations: {e}")
+        
+        return {"operation": "none", "message": "", "confirmation_needed": False}
+    
+    def _extract_json_from_response(self, response_text: str) -> str:
+        """Extract JSON object from LLM response that may contain additional text"""
+        lines = response_text.strip().split('\n')
+        json_lines = []
+        in_json = False
+        brace_count = 0
+        
+        for line in lines:
+            stripped = line.strip()
+            if not in_json and stripped.startswith('{'):
+                in_json = True
+                json_lines = [line]
+                brace_count = stripped.count('{') - stripped.count('}')
+            elif in_json:
+                json_lines.append(line)
+                brace_count += stripped.count('{') - stripped.count('}')
+                if brace_count <= 0:  # Found closing brace
+                    break
+        
+        if json_lines:
+            return '\n'.join(json_lines)
+        return ""
+    
+    def _add_todo_item(self, todo_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Add a new todo item to the list"""
+        import uuid
+        
+        todo_item = {
+            "id": str(uuid.uuid4())[:8],  # Short unique ID
+            "task": todo_data.get("task", ""),
+            "details": todo_data.get("details", ""),
+            "priority": todo_data.get("priority", "medium"),
+            "date_added": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "status": "pending",
+            "date_completed": None
+        }
+        
+        self.todo_list.append(todo_item)
+        self.save_todo_list()
+        
+        return {
+            "operation": "add",
+            "message": f"Added to todo list: {todo_item['task']}",
+            "confirmation_needed": False,
+            "todo_item": todo_item
+        }
+    
+    def _handle_todo_completion(self, todo_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle when user mentions completing work - check for matching todos"""
+        completed_work = todo_data.get("completed_task", "")
+        
+        # Find matching pending todos
+        pending_todos = [todo for todo in self.todo_list if todo["status"] == "pending"]
+        
+        if not pending_todos:
+            return {
+                "operation": "complete",
+                "message": "Great work! No pending todos to mark as complete.",
+                "confirmation_needed": False
+            }
+        
+        # Use LLM to find matching todos
+        try:
+            matching_prompt = TODO_COMPLETION_CONFIRMATION_PROMPT.format(
+                completed_work=completed_work,
+                matching_todos=json.dumps(pending_todos, indent=2)
+            )
+            response = self.llm.invoke(matching_prompt)
+            response_text = response.content.strip()
+            
+            if response_text and response_text != "{}":
+                json_text = self._extract_json_from_response(response_text)
+                if json_text:
+                    matches_data = json.loads(json_text)
+                else:
+                    matches_data = {}
+                matches = matches_data.get("matches", [])
+                
+                if matches:
+                    # Return matches for user confirmation
+                    return {
+                        "operation": "complete",
+                        "message": f"You mentioned completing: {completed_work}",
+                        "confirmation_needed": True,
+                        "matches": matches,
+                        "completed_work": completed_work
+                    }
+        
+        except (json.JSONDecodeError, Exception) as e:
+            print(f"Warning: Error matching todo completions: {e}")
+        
+        return {
+            "operation": "complete", 
+            "message": "Great work! Couldn't find matching todos to mark complete.",
+            "confirmation_needed": False
+        }
+    
+    def confirm_todo_completion(self, todo_id: str, completed_work: str) -> bool:
+        """Mark a specific todo as completed after user confirmation"""
+        for todo in self.todo_list:
+            if todo["id"] == todo_id and todo["status"] == "pending":
+                todo["status"] = "completed"
+                todo["date_completed"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+                todo["completion_notes"] = completed_work
+                self.save_todo_list()
+                return True
+        return False
+    
+    def get_todo_summary(self) -> str:
+        """Get a formatted summary of the current todo list"""
+        if not self.todo_list:
+            return "Todo list is empty - no pending tasks!"
+        
+        pending_todos = [todo for todo in self.todo_list if todo["status"] == "pending"]
+        completed_todos = [todo for todo in self.todo_list if todo["status"] == "completed"]
+        
+        summary = []
+        
+        if pending_todos:
+            summary.append("🔧 **Pending Tasks:**")
+            for todo in pending_todos:
+                priority_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(todo["priority"], "⚪")
+                summary.append(f"  {priority_icon} {todo['task']} (ID: {todo['id']})")
+                if todo.get("details"):
+                    summary.append(f"     • {todo['details']}")
+        
+        if completed_todos:
+            summary.append("\n✅ **Recently Completed:**")
+            recent_completed = completed_todos[-3:]  # Show last 3 completed
+            for todo in recent_completed:
+                summary.append(f"  ✓ {todo['task']} ({todo['date_completed']})")
+        
+        return "\n".join(summary)
+    
+    def cleanup_maintenance_log(self):
+        """Clean up maintenance log to remove planned work (should be in todo list)"""
+        if not hasattr(self, 'maintenance_log') or not self.maintenance_log:
+            return
+        
+        # Filter out planned/future work from maintenance log
+        completed_work = []
+        planned_work_found = []
+        
+        for entry in self.maintenance_log.get("recent_work", []):
+            action = entry.get("action", "").lower()
+            notes = entry.get("notes", "").lower()
+            
+            # Check if this is planned work
+            is_planned = any(keyword in action or keyword in notes for keyword in [
+                "planned", "planning", "going to", "will", "should", "need to", 
+                "future", "research", "looking for", "plan to"
+            ])
+            
+            if is_planned:
+                planned_work_found.append(entry)
+            else:
+                completed_work.append(entry)
+        
+        # Update maintenance log with only completed work
+        if len(completed_work) != len(self.maintenance_log.get("recent_work", [])):
+            self.maintenance_log["recent_work"] = completed_work
+            self.save_maintenance_log()
+            print(f"Cleaned up maintenance log: moved {len(planned_work_found)} planned items")
+            
+        return planned_work_found
+    
     def update_maintenance_memory(self, user_input: str) -> bool:
         """
         Detect and update maintenance memory from user input
@@ -193,7 +423,11 @@ class TriumphSpitfireRAG:
             response_text = response.content.strip()
             if response_text and response_text != "{}":
                 try:
-                    maintenance_data = json.loads(response_text)
+                    json_text = self._extract_json_from_response(response_text)
+                    if json_text:
+                        maintenance_data = json.loads(json_text)
+                    else:
+                        maintenance_data = None
                     if maintenance_data and "action" in maintenance_data:
                         # Add to maintenance log
                         maintenance_entry = {
@@ -482,14 +716,16 @@ class TriumphSpitfireRAG:
         """
         Main method to ask LUCY a question with memory integration
         """
-        # Check for maintenance updates and technical knowledge
+        # Check for maintenance updates, technical knowledge, and todo operations
         maintenance_detected = self.update_maintenance_memory(question)
         technical_knowledge_detected = self.update_technical_knowledge(question)
+        todo_result = self.process_todo_operations(question)
         
         try:
             # Prepare the enhanced question with LUCY's personality and context
             maintenance_context = self.format_maintenance_history()
             technical_context = self.format_technical_knowledge()
+            todo_context = self.get_todo_summary()
             
             # Add detection status to the question if knowledge was detected
             detection_note = ""
@@ -497,12 +733,15 @@ class TriumphSpitfireRAG:
                 detection_note = "\n[SYSTEM: Technical knowledge was just detected and saved from this input - acknowledge this!]"
             if maintenance_detected:
                 detection_note += "\n[SYSTEM: Maintenance work was just detected and saved from this input - acknowledge this!]"
+            if todo_result["operation"] == "add":
+                detection_note += f"\n[SYSTEM: Todo item was added: {todo_result['message']} - acknowledge this!]"
             
             # Create a personality-infused question using the proper prompt
             enhanced_question = LUCY_SPITFIRE_PROMPT.format(
                 lucy_age=self.config.LUCY_AGE,
                 maintenance_history=maintenance_context,
                 technical_knowledge=technical_context,
+                todo_list=todo_context,
                 context="",  # Will be filled by RAG retrieval
                 chat_history="",  # Will be filled by conversation memory
                 question=question + detection_note
@@ -515,7 +754,8 @@ class TriumphSpitfireRAG:
                 "answer": result["answer"],
                 "source_documents": result.get("source_documents", []),
                 "maintenance_detected": maintenance_detected,
-                "technical_knowledge_detected": technical_knowledge_detected
+                "technical_knowledge_detected": technical_knowledge_detected,
+                "todo_result": todo_result
             }
             
             return response
